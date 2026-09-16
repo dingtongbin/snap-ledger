@@ -4,7 +4,7 @@ class S {
   S._();
 
   static const String appName = '随手记账';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '0.1.0';
   static const String appSlogan = '本地记账 · 数据不出设备';
 
   // 底部导航

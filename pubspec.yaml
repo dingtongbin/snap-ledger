@@ -1,7 +1,7 @@
 name: bookkeeping
 description: "A GPL-3.0 licensed personal bookkeeping app (随手记账)."
 publish_to: 'none'
-version: 1.0.0+1
+version: 0.1.0+1
 
 environment:
   sdk: ^3.12.2
