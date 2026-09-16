@@ -30,8 +30,8 @@ class BackupService {
   final Database _db;
 
   static const int formatVersion = 3;
-  static const String appTag = 'bookkeeping';
-  static const String backupDirName = 'BookkeepingBackup';
+  static const String appTag = 'snap-ledger';
+  static const String backupDirName = 'SnapLedgerBackup';
   static const String _jsonEntryName = 'backup.json';
   static const String _attachmentsPrefix = 'attachments/';
 
@@ -164,7 +164,7 @@ class BackupService {
         .substring(0, 19)
         .replaceAll(RegExp(r'[:T]'), '-');
     final suffix = (password != null && password.isNotEmpty) ? '.加密' : '';
-    final outPath = p.join(dir, 'bookkeeping_$stamp$suffix.zip');
+    final outPath = p.join(dir, 'snap-ledger_$stamp$suffix.zip');
 
     final archive = Archive();
     // 1. backup.json
@@ -193,7 +193,7 @@ class BackupService {
   Future<String> exportJsonToFile() async {
     final dir = await _ensureBackupDir();
     final name =
-        'bookkeeping_${DateTime.now().toIso8601String().substring(0, 19).replaceAll(RegExp(r'[:T]'), '-')}.json';
+        'snap-ledger_${DateTime.now().toIso8601String().substring(0, 19).replaceAll(RegExp(r'[:T]'), '-')}.json';
     final file = p.join(dir, name);
     await _write(file, await exportJson());
     return file;
@@ -390,7 +390,7 @@ class BackupService {
     }
     final dir = await _ensureBackupDir();
     final name =
-        'bookkeeping_${DateTime.now().toIso8601String().substring(0, 10)}.csv';
+        'snap-ledger_${DateTime.now().toIso8601String().substring(0, 10)}.csv';
     final file = p.join(dir, name);
     await _write(file, buf.toString());
     return file;

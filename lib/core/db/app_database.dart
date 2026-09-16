@@ -33,7 +33,7 @@ class AppDatabase {
     final dir = await _resolveDbDir();
     await Directory(dir).create(recursive: true);
     final db = await openDatabase(
-      p.join(dir, 'bookkeeping.db'),
+      p.join(dir, 'snap-ledger.db'),
       version: schemaVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,

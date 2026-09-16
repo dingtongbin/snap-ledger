@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:bookkeeping/core/money.dart';
-import 'package:bookkeeping/ui/add/amount_keypad.dart';
+import 'package:snap_ledger/core/money.dart';
+import 'package:snap_ledger/ui/add/amount_keypad.dart';
 
 void main() {
   testWidgets('记账键盘按键与状态机联动', (tester) async {

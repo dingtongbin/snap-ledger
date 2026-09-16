@@ -1,5 +1,5 @@
-name: bookkeeping
-description: "A GPL-3.0 licensed personal bookkeeping app (随手记账)."
+name: snap_ledger
+description: "snap-ledger —— 随手记账：local-first personal bookkeeping app (GPL-3.0)."
 publish_to: 'none'
 version: 0.1.0+1
 

@@ -1,4 +1,4 @@
-package com.bookkeeping.bookkeeping
+package com.snapledger.app
 
 import io.flutter.embedding.android.FlutterActivity
 

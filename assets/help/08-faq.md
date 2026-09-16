@@ -9,7 +9,7 @@
 全部在本机应用目录：
 
 - 数据库在本机应用支持目录
-- 图片在文档目录的 `Bookkeeping/attachments` 下
+- 图片在文档目录的 `SnapLedger/attachments` 下
 - 卸载应用即全部清理
 
 ## 删除的账单能找回吗？

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:bookkeeping/core/money.dart';
+import 'package:snap_ledger/core/money.dart';
 
 void main() {
   group('Money.parse', () {

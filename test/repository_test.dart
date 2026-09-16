@@ -4,13 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:bookkeeping/core/db/app_database.dart';
-import 'package:bookkeeping/core/date_utils.dart';
-import 'package:bookkeeping/core/exceptions.dart';
-import 'package:bookkeeping/data/backup/backup_service.dart';
-import 'package:bookkeeping/data/image_store.dart';
-import 'package:bookkeeping/data/models/models.dart';
-import 'package:bookkeeping/data/repositories/repositories.dart';
+import 'package:snap_ledger/core/db/app_database.dart';
+import 'package:snap_ledger/core/date_utils.dart';
+import 'package:snap_ledger/core/exceptions.dart';
+import 'package:snap_ledger/data/backup/backup_service.dart';
+import 'package:snap_ledger/data/image_store.dart';
+import 'package:snap_ledger/data/models/models.dart';
+import 'package:snap_ledger/data/repositories/repositories.dart';
 
 /// 伪造 path_provider 的文档目录（备份/图片端到端测试用）。
 class _FakePathProvider extends PathProviderPlatform {
@@ -307,14 +307,14 @@ void main() {
     );
     await expectLater(
       svc.restoreJson(
-        '{"app":"bookkeeping","formatVersion":99,"schemaVersion":1,'
+        '{"app":"snap-ledger","formatVersion":99,"schemaVersion":1,'
         '"categories":[],"accounts":[],"transactions":[]}',
       ),
       throwsA(isA<AppException>()),
     );
     // 合法空备份恢复成功
     final r = await svc.restoreJson(
-      '{"app":"bookkeeping","formatVersion":1,"schemaVersion":1,'
+      '{"app":"snap-ledger","formatVersion":1,"schemaVersion":1,'
       '"categories":[],"accounts":[],"transactions":[]}',
     );
     expect(r.transactions, 0);

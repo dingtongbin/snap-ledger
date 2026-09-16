@@ -18,7 +18,7 @@ class ImageStore {
   /// 返回 attachments 目录绝对路径，不存在则创建。
   static Future<Directory> _attachmentsDir() async {
     final base = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(base.path, 'Bookkeeping', attachmentsSubdir));
+    final dir = Directory(p.join(base.path, 'SnapLedger', attachmentsSubdir));
     if (!dir.existsSync()) {
       await dir.create(recursive: true);
     }
