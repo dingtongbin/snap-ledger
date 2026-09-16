@@ -6,7 +6,7 @@ import '../../core/strings.dart';
 import '../../core/theme.dart';
 import '../../data/models/models.dart';
 
-/// 金额文本：收入 “+” 绿色，转账蓝色，支出用前景色。
+/// 金额文本：全局统一符号规范——支出 `-` 前景色，收入 `+` 绿色，转账蓝色。
 class AmountText extends StatelessWidget {
   const AmountText(
     this.cents, {
@@ -25,7 +25,7 @@ class AmountText extends StatelessWidget {
     final (color, prefix) = switch (type) {
       TxType.income => (AppTheme.incomeGreen, '+'),
       TxType.transfer => (AppTheme.transferBlue, ''),
-      TxType.expense => (cs.onSurface, ''),
+      TxType.expense => (cs.onSurface, '-'),
     };
     return Text(
       '$prefix${Money.format(cents)}',

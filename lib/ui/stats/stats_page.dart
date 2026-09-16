@@ -9,11 +9,52 @@ import '../../core/strings.dart';
 import '../../core/theme.dart';
 import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
+import '../../state/book_controller.dart';
 import '../../state/ledger_controller.dart';
+import '../widgets/book_picker.dart';
 import '../widgets/common.dart';
 import '../mine/reminder_page.dart';
 import 'category_detail_page.dart';
 import 'tx_detail_page.dart';
+
+/// 统计页头部账本选择 chip（与明细页样式一致）。
+class _StatsBookChip extends StatelessWidget {
+  const _StatsBookChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final books = context.watch<BookController>();
+    final cs = Theme.of(context).colorScheme;
+    final label = books.selected?.name ?? '全部账本';
+    return InkWell(
+      onTap: () => showBookPicker(context),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: cs.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.menu_book_outlined, size: 13, color: cs.primary),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: cs.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            Icon(Icons.expand_more, size: 14, color: cs.primary),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// 统计页：周报 / 月报 / 年报三模式。
 ///
@@ -114,11 +155,19 @@ class _StatsPageState extends State<StatsPage> {
   @override
   Widget build(BuildContext context) {
     final ledger = context.watch<LedgerController>();
+    final books = context.watch<BookController>();
     final (from, to) = _range;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(S.tabStats),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(S.tabStats),
+            const SizedBox(width: 8),
+            const _StatsBookChip(),
+          ],
+        ),
         actions: [
           TextButton.icon(
             onPressed: () => Navigator.push(
@@ -146,30 +195,28 @@ class _StatsPageState extends State<StatsPage> {
           ),
           // ── 第二排：时间导航 + 收支切换 ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 12, 0),
+            padding: const EdgeInsets.fromLTRB(4, 4, 12, 0),
             child: Row(
               children: [
+                // 时间导航：按钮紧贴文本，整组靠左。
                 IconButton(
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                   onPressed: () => _shift(-1),
                   icon: const Icon(Icons.chevron_left, size: 20),
                 ),
-                Expanded(
-                  child: Text(
-                    _rangeLabel,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                Text(
+                  _rangeLabel,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 IconButton(
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                   onPressed: () => _shift(1),
                   icon: const Icon(Icons.chevron_right, size: 20),
                 ),
-                const SizedBox(width: 8),
+                const Spacer(),
                 // 收支切换（紧凑版）
                 ToggleButtons(
                   isSelected: [_kind == TxType.expense, _kind == TxType.income],
@@ -193,12 +240,14 @@ class _StatsPageState extends State<StatsPage> {
           Expanded(
             child: FutureBuilder<_StatsFullData>(
               key: ValueKey(
-                '$_period-${DateKeys.dateKey(_cursor)}-$_kind-${ledger.version}',
+                '$_period-${DateKeys.dateKey(_cursor)}-$_kind-'
+                '${ledger.version}-${books.selectedId}',
               ),
               future: _load(context, from, to),
               builder: (context, snap) {
                 if (snap.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  // 骨架屏：布局与真实内容一致，感知等待更短、不跳动。
+                  return const _StatsSkeleton();
                 }
                 if (snap.hasError) {
                   return EmptyState(
@@ -215,9 +264,10 @@ class _StatsPageState extends State<StatsPage> {
                       days: _rangeDays,
                       prev: data.prev,
                       kind: _kind,
+                      period: _period,
                     ),
                     const SizedBox(height: 8),
-                    _TrendChart(dailySums: data.dailySums, period: _period),
+                    _TrendChart(dailySums: data.dailySums, period: _period, kind: _kind),
                     const SizedBox(height: 8),
                     _CompositionSection(stats: data.categoryStats, kind: _kind),
                     const SizedBox(height: 8),
@@ -283,12 +333,18 @@ class _StatsPageState extends State<StatsPage> {
       d = d.add(const Duration(days: 1));
     }
 
+    final ledgerId = context.read<BookController>().filterLedgerId;
     final results = await Future.wait([
-      txRepo.periodSummary(from, to), // 0
-      txRepo.periodSummary(prevFrom, prevTo), // 1
-      txRepo.dailySums(from, to, allDates: allDates), // 2
-      txRepo.categorySumsForPeriod(from, to, _kind), // 3
-      txRepo.topTransactions(from, to, _kind), // 4
+      txRepo.periodSummary(from, to, ledgerId: ledgerId), // 0
+      txRepo.periodSummary(prevFrom, prevTo, ledgerId: ledgerId), // 1
+      txRepo.dailySums(
+        from,
+        to,
+        allDates: allDates,
+        ledgerId: ledgerId,
+      ), // 2
+      txRepo.categorySumsForPeriod(from, to, _kind, ledgerId: ledgerId), // 3
+      txRepo.topTransactions(from, to, _kind, ledgerId: ledgerId), // 4
       accRepo.listAll(includeDeleted: true), // 5
       catRepo.listAll(includeDeleted: true), // 6
     ]);
@@ -328,18 +384,76 @@ class _StatsFullData {
 
 // ── 1. 汇总卡片 ────────────────────────────────────────────────────────────
 
+/// 统计加载骨架：模拟汇总卡 / 趋势图 / 构成区的占位布局。
+class _StatsSkeleton extends StatelessWidget {
+  const _StatsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = dark ? AppColors.darkCard : Colors.white;
+    final barColor = cs.surfaceContainerHighest;
+    Widget box(double h, {double w = double.infinity}) => Container(
+      height: h,
+      width: w,
+      decoration: BoxDecoration(
+        color: barColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
+    Widget card({required Widget child}) => Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
+    );
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  box(14, w: 64),
+                  const SizedBox(width: 16),
+                  box(14, w: 64),
+                  const SizedBox(width: 16),
+                  box(14, w: 64),
+                ],
+              ),
+              const SizedBox(height: 12),
+              box(12, w: 120),
+            ],
+          ),
+        ),
+        card(child: Column(children: [box(120)])),
+        card(child: Column(children: [box(14, w: 90), const SizedBox(height: 12), box(90)])),
+      ],
+    );
+  }
+}
+
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
     required this.total,
     required this.days,
     required this.prev,
     required this.kind,
+    required this.period,
   });
 
   final MonthSummary total;
   final int days;
   final MonthSummary prev;
   final TxType kind;
+  final _Period period;
 
   @override
   Widget build(BuildContext context) {
@@ -351,15 +465,11 @@ class _SummaryCard extends StatelessWidget {
         ? prev.expenseCents
         : prev.incomeCents;
     final daily = days > 0 ? amount / days : 0;
-    final changePct = prevAmount > 0
-        ? ((amount - prevAmount) / prevAmount * 100)
-        : (amount > 0 ? 100.0 : 0.0);
-    final isUp = amount > prevAmount;
 
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF2A2C30)
+            ? AppColors.darkCard
             : Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -373,23 +483,13 @@ class _SummaryCard extends StatelessWidget {
           ),
           _col('日均', Money.format(daily.round()), cs),
           _col(
-            '环比',
-            '${isUp
-                    ? '↑'
-                    : prevAmount == amount
-                    ? '→'
-                    : '↓'} '
-                '${changePct.abs().toStringAsFixed(1)}%',
+            switch (period) {
+              _Period.week => '对比上周',
+              _Period.month => '对比上月',
+              _Period.year => '对比去年',
+            },
+            Money.format(prevAmount),
             cs,
-            color: prevAmount == amount
-                ? null
-                : isUp
-                ? (kind == TxType.expense
-                      ? const Color(0xFFEF5350)
-                      : AppTheme.incomeGreen)
-                : (kind == TxType.expense
-                      ? AppTheme.incomeGreen
-                      : const Color(0xFFEF5350)),
           ),
         ],
       ),
@@ -422,138 +522,136 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-// ── 2. 趋势柱状图 ──────────────────────────────────────────────────────────
+// ── 2. 趋势折线图 ──────────────────────────────────────────────────────────
 
-class _TrendChart extends StatelessWidget {
-  const _TrendChart({required this.dailySums, required this.period});
+class _TrendChart extends StatefulWidget {
+  const _TrendChart({
+    required this.dailySums,
+    required this.period,
+    required this.kind,
+  });
 
   final List<DailyTypeStat> dailySums;
   final _Period period;
+  final TxType kind;
+
+  @override
+  State<_TrendChart> createState() => _TrendChartState();
+}
+
+class _TrendChartState extends State<_TrendChart> {
+  int? _hover;
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final dailySums = widget.dailySums;
+    final period = widget.period;
+    final isExpense = widget.kind == TxType.expense;
+    final lineColor = isExpense
+        ? AppTheme.expenseOrange
+        : AppTheme.incomeGreen;
+
+    // 数据序列：年报按月聚合为 12 点，周报/月报逐日。
+    final List<double> values;
+    final List<String> labels;
+    final List<String> tooltips;
+    if (period == _Period.year) {
+      final monthly = List<double>.filled(12, 0);
+      var year = '';
+      for (final d in dailySums) {
+        year = d.dateKey.substring(0, 4);
+        final month = int.parse(DateKeys.monthKeyOf(d.dateKey).substring(5));
+        monthly[month - 1] += isExpense ? d.expenseCents : d.incomeCents;
+      }
+      values = monthly;
+      labels = [for (var i = 1; i <= 12; i++) '$i月'];
+      tooltips = [for (var i = 1; i <= 12; i++) '$year年$i月'];
+    } else {
+      values = [
+        for (final d in dailySums) (isExpense ? d.expenseCents : d.incomeCents).toDouble(),
+      ];
+      final labelEvery = values.length > 14 ? 5 : 1;
+      labels = [
+        for (var i = 0; i < values.length; i++)
+          i % labelEvery == 0 ? _dayLabel(dailySums, i) : '',
+      ];
+      tooltips = [
+        for (final d in dailySums)
+          '${int.parse(d.dateKey.substring(5, 7))}月'
+              '${int.parse(d.dateKey.substring(8))}日',
+      ];
+    }
+
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF2A2C30)
-            : Colors.white,
+        color: dark ? AppColors.darkCard : Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            period == _Period.year ? '月度趋势' : '每日趋势',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
           Row(
             children: [
-              _dot(AppTheme.expenseOrange, '支出'),
-              const SizedBox(width: 12),
-              _dot(AppTheme.incomeGreen, '收入'),
+              Text(
+                period == _Period.year ? '月度趋势' : '每日趋势',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: lineColor, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                isExpense ? '支出' : '收入',
+                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           SizedBox(
-            height: 120,
-            child: period == _Period.year
-                ? _yearlyBars(context)
-                : _dailyBars(context),
+            height: 140,
+            width: double.infinity,
+            child: MouseRegion(
+              onHover: (e) {
+                final w = context.size?.width ?? 0;
+                final n = values.length;
+                if (w <= 0 || n == 0) return;
+                const hPad = _LineChartPainter._hPad;
+                final plotW = w - hPad * 2;
+                final i = n == 1
+                    ? 0
+                    : ((e.localPosition.dx - hPad) / plotW * (n - 1))
+                        .round()
+                        .clamp(0, n - 1);
+                setState(() => _hover = i);
+              },
+              onExit: (_) => setState(() => _hover = null),
+              child: CustomPaint(
+                painter: _LineChartPainter(
+                  values: values,
+                  labels: labels,
+                  tooltips: tooltips,
+                  hoverIndex: _hover,
+                  lineColor: lineColor,
+                  labelColor: cs.onSurfaceVariant,
+                  gridColor: cs.outlineVariant.withValues(alpha: 0.35),
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _dailyBars(BuildContext context) {
-    // 月报可能有 28-31 根柱，周报 7 根；密集时隔几个显示标签。
-    final maxV = _maxValue();
-    final labelEvery = dailySums.length > 14 ? 5 : 1;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        for (var i = 0; i < dailySums.length; i++) ...[
-          if (i > 0) const SizedBox(width: 1),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                _miniBars(dailySums[i], maxV),
-                const SizedBox(height: 4),
-                if (i % labelEvery == 0)
-                  Text(
-                    _dayLabel(i),
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  )
-                else
-                  const SizedBox(height: 10),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _yearlyBars(BuildContext context) {
-    // 年报：把 dailySums 按月聚合后显示 12 根柱。
-    final monthly = <String, DailyTypeStat>{};
-    for (final d in dailySums) {
-      final mk = DateKeys.monthKeyOf(d.dateKey);
-      final existing = monthly[mk];
-      monthly[mk] = DailyTypeStat(
-        dateKey: mk,
-        expenseCents: (existing?.expenseCents ?? 0) + d.expenseCents,
-        incomeCents: (existing?.incomeCents ?? 0) + d.incomeCents,
-      );
-    }
-    final months = monthly.values.toList();
-    final maxV = months.fold<int>(
-      1,
-      (m, s) => math.max(m, math.max(s.expenseCents, s.incomeCents)),
-    );
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        for (var i = 0; i < months.length; i++) ...[
-          if (i > 0) const SizedBox(width: 2),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                _miniBars(months[i], maxV),
-                const SizedBox(height: 4),
-                Text(
-                  '${i + 1}月',
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  int _maxValue() {
-    var m = 1;
-    for (final d in dailySums) {
-      m = math.max(m, math.max(d.expenseCents, d.incomeCents));
-    }
-    return m;
-  }
-
-  String _dayLabel(int i) {
-    final d = DateKeys.parseDateKey(dailySums[i].dateKey);
-    switch (period) {
+  String _dayLabel(List<DailyTypeStat> sums, int i) {
+    final d = DateKeys.parseDateKey(sums[i].dateKey);
+    switch (widget.period) {
       case _Period.week:
         return ['一', '二', '三', '四', '五', '六', '日'][d.weekday - 1];
       case _Period.month:
@@ -562,39 +660,187 @@ class _TrendChart extends StatelessWidget {
         return '';
     }
   }
+}
 
-  Widget _miniBars(DailyTypeStat s, int maxV) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        _bar(s.expenseCents / maxV, AppTheme.expenseOrange),
-        const SizedBox(width: 2),
-        _bar(s.incomeCents / maxV, AppTheme.incomeGreen),
-      ],
+/// 单序列折线图：尖角折线 + 渐变填充 + 网格基线 + X 轴标签。
+/// 无常驻数据点；悬浮时绘制竖直引导线、高亮点与「日期 + 金额」气泡。
+/// 标签由画布绘制，与数据点横向精确对齐。
+class _LineChartPainter extends CustomPainter {
+  _LineChartPainter({
+    required this.values,
+    required this.labels,
+    required this.tooltips,
+    required this.hoverIndex,
+    required this.lineColor,
+    required this.labelColor,
+    required this.gridColor,
+  });
+
+  final List<double> values;
+  final List<String> labels;
+  final List<String> tooltips;
+  final int? hoverIndex;
+  final Color lineColor;
+  final Color labelColor;
+  final Color gridColor;
+
+  static const double _topPad = 14;
+  static const double _bottomPad = 18;
+  static const double _hPad = 8;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+    final maxV = values.fold<double>(1, (m, v) => math.max(m, v));
+    final chartH = size.height - _topPad - _bottomPad;
+    final plotW = size.width - _hPad * 2;
+
+    Offset pointAt(int i) {
+      if (values.length == 1) {
+        return Offset(size.width / 2, _topPad + chartH * (1 - values[0] / maxV));
+      }
+      final x = _hPad + plotW * i / (values.length - 1);
+      final y = _topPad + chartH * (1 - values[i] / maxV);
+      return Offset(x, y);
+    }
+
+    // 网格基线：0 / 50% / 100% 三条细线。
+    final gridPaint = Paint()
+      ..color = gridColor
+      ..strokeWidth = 0.6;
+    for (final f in const [0.0, 0.5, 1.0]) {
+      final y = _topPad + chartH * f;
+      canvas.drawLine(Offset(_hPad, y), Offset(size.width - _hPad, y), gridPaint);
+    }
+
+    final pts = [for (var i = 0; i < values.length; i++) pointAt(i)];
+
+    // 渐变填充。
+    if (pts.length > 1) {
+      final fillPath = Path()
+        ..moveTo(pts.first.dx, pts.first.dy)
+        ..addPolygon(pts, false)
+        ..lineTo(pts.last.dx, _topPad + chartH)
+        ..lineTo(pts.first.dx, _topPad + chartH)
+        ..close();
+      canvas.drawPath(
+        fillPath,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              lineColor.withValues(alpha: 0.22),
+              lineColor.withValues(alpha: 0.02),
+            ],
+          ).createShader(
+            Rect.fromLTWH(0, _topPad, size.width, chartH),
+          ),
+      );
+
+      // 折线：尖角转折（miter），无常驻数据点。
+      canvas.drawPath(
+        Path()..addPolygon(pts, false),
+        Paint()
+          ..color = lineColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..strokeJoin = StrokeJoin.miter
+          ..strokeCap = StrokeCap.butt,
+      );
+    }
+
+    // 悬浮：竖直引导线 + 高亮点 + 日期金额气泡。
+    final hi = hoverIndex;
+    if (hi != null && hi >= 0 && hi < pts.length) {
+      final p = pts[hi];
+      // 竖直引导线。
+      canvas.drawLine(
+        Offset(p.dx, _topPad),
+        Offset(p.dx, _topPad + chartH),
+        Paint()
+          ..color = lineColor.withValues(alpha: 0.35)
+          ..strokeWidth = 1,
+      );
+      // 高亮点。
+      canvas.drawCircle(p, 3.5, Paint()..color = lineColor);
+      canvas.drawCircle(
+        p,
+        3.5,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4,
+      );
+      // 气泡。
+      final tipText = '${tooltips[hi]}  ${Money.format(values[hi].round())}';
+      final tp = TextPainter(
+        text: TextSpan(
+          text: tipText,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final bw = tp.width + 14;
+      final bh = tp.height + 8;
+      var bx = p.dx - bw / 2;
+      bx = bx.clamp(2.0, size.width - bw - 2);
+      var by = p.dy - bh - 8;
+      if (by < 2) by = p.dy + 8;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(bx, by, bw, bh),
+        const Radius.circular(6),
+      );
+      canvas.drawRRect(rect, Paint()..color = const Color(0xE6303236));
+      tp.paint(canvas, Offset(bx + 7, by + 4));
+    }
+
+    // X 轴标签（与数据点同 x 坐标绘制）。
+    for (var i = 0; i < labels.length; i++) {
+      final text = labels[i];
+      if (text.isEmpty) continue;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(fontSize: 9, color: labelColor),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final x = pts[i].dx;
+      tp.paint(
+        canvas,
+        Offset((x - tp.width / 2).clamp(0.0, size.width - tp.width),
+            size.height - _bottomPad + 4),
+      );
+    }
+
+    // 峰值标注（右上角）。
+    final maxTp = TextPainter(
+      text: TextSpan(
+        text: Money.format(maxV.round()),
+        style: TextStyle(fontSize: 9, color: labelColor),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    maxTp.paint(
+      canvas,
+      Offset(size.width - maxTp.width, 0),
     );
   }
 
-  Widget _bar(double fraction, Color color) => Container(
-    width: 8,
-    height: math.max(2.0, fraction * 100),
-    decoration: BoxDecoration(
-      color: fraction <= 0 ? color.withValues(alpha: 0.15) : color,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-    ),
-  );
-
-  Widget _dot(Color c, String label) => Row(
-    children: [
-      Container(
-        width: 8,
-        height: 8,
-        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
-      ),
-      const SizedBox(width: 4),
-      Text(label, style: const TextStyle(fontSize: 11)),
-    ],
-  );
+  @override
+  bool shouldRepaint(covariant _LineChartPainter old) =>
+      old.values != values ||
+      old.labels != labels ||
+      old.tooltips != tooltips ||
+      old.hoverIndex != hoverIndex ||
+      old.lineColor != lineColor ||
+      old.labelColor != labelColor ||
+      old.gridColor != gridColor;
 }
 
 // ── 3. 饼图构成 ────────────────────────────────────────────────────────────
@@ -613,7 +859,7 @@ class _CompositionSection extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF2A2C30)
+            ? AppColors.darkCard
             : Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -688,7 +934,7 @@ class _Legend extends StatelessWidget {
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 CategoryBadge(
                   icon: shown[i].icon,
                   color: shown[i].color,
@@ -704,6 +950,7 @@ class _Legend extends StatelessWidget {
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
+                const SizedBox(width: 6),
                 Text(
                   '${(shown[i].sumCents / total * 100).toStringAsFixed(1)}%',
                   style: TextStyle(
@@ -752,7 +999,7 @@ class _CategoryListSection extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF2A2C30)
+            ? AppColors.darkCard
             : Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -856,7 +1103,7 @@ class _RankingSection extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF2A2C30)
+            ? AppColors.darkCard
             : Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -903,12 +1150,7 @@ class _RankTile extends StatelessWidget {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute<void>(
-          builder: (_) => TxDetailPage(
-            tx: tx,
-            categoryName: category?.name ?? S.unknownCategory,
-            categoryIcon: category?.icon ?? Icons.more_horiz,
-            accountName: account?.name ?? '未知账户',
-          ),
+          builder: (_) => TxDetailPage(tx: tx),
         ),
       ),
       child: Padding(
@@ -939,7 +1181,7 @@ class _RankTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    category?.name ?? S.unknownCategory,
+                    category?.displayName ?? S.unknownCategory,
                     style: const TextStyle(fontSize: 13),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

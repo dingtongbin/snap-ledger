@@ -100,9 +100,19 @@ class CategoryRepository {
     );
   }
 
-  /// 软删除。已被账单引用也允许删除（历史账单回退展示），
-  /// 这样用户可以清理不需要的分类而不破坏账本完整性。
+  /// 软删除。仅允许删除自定义分类：默认（builtin）分类拒绝删除。
+  /// 已被账单引用也允许删除，历史账单展示名回退为「其他」。
   Future<void> softDelete(int id) async {
+    final rows = await _db.query(
+      'categories',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) throw const AppException('分类不存在');
+    if (((rows.first['builtin'] as int?) ?? 0) == 1) {
+      throw const AppException('默认分类不能删除');
+    }
     await _db.update(
       'categories',
       {'deleted': 1, 'updatedAt': DateTime.now().millisecondsSinceEpoch},
@@ -268,6 +278,125 @@ class AccountRepository {
   }
 }
 
+/// 账本仓储。默认账本（id=1）内置不可删；删除要求账本下无有效账单。
+class LedgerBookRepository {
+  LedgerBookRepository(this._db);
+
+  final Database _db;
+
+  static const int maxNameLength = 12;
+
+  Future<List<LedgerBook>> listAll({bool includeDeleted = false}) async {
+    final rows = await _db.query(
+      'ledgers',
+      where: includeDeleted ? null : 'deleted = 0',
+      orderBy: 'sort ASC, id ASC',
+    );
+    return rows.map(LedgerBook.fromMap).toList();
+  }
+
+  Future<LedgerBook?> byId(int id) async {
+    final rows = await _db.query(
+      'ledgers',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : LedgerBook.fromMap(rows.first);
+  }
+
+  Future<int> create({
+    required String name,
+    required int iconCode,
+    required int colorValue,
+  }) async {
+    final n = await _validateName(name);
+    await _ensureUnique(n);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final maxSort = Sqflite.firstIntValue(
+      await _db.query('ledgers', columns: ['COALESCE(MAX(sort), 0)']),
+    );
+    return _db.insert('ledgers', {
+      'name': n,
+      'iconCode': iconCode,
+      'colorValue': colorValue,
+      'sort': (maxSort ?? 0) + 1,
+      'deleted': 0,
+      'builtin': 0,
+      'createdAt': now,
+      'updatedAt': now,
+    });
+  }
+
+  Future<void> update(
+    LedgerBook book, {
+    required String name,
+    required int iconCode,
+    required int colorValue,
+  }) async {
+    final id = book.id;
+    if (id == null) throw const AppException('账本不存在');
+    final n = await _validateName(name);
+    await _ensureUnique(n, excludeId: id);
+    await _db.update(
+      'ledgers',
+      {
+        'name': n,
+        'iconCode': iconCode,
+        'colorValue': colorValue,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> softDelete(int id) async {
+    final book = await byId(id);
+    if (book == null) return;
+    if (book.builtin) throw const AppException('默认账本不能删除');
+    final used = Sqflite.firstIntValue(
+      await _db.query(
+        'transactions',
+        columns: ['COUNT(*)'],
+        where: 'deleted = 0 AND ledger_id = ?',
+        whereArgs: [id],
+      ),
+    );
+    if ((used ?? 0) > 0) {
+      throw const AppException('该账本下仍有账单，无法删除');
+    }
+    await _db.update(
+      'ledgers',
+      {'deleted': 1, 'updatedAt': DateTime.now().millisecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<String> _validateName(String raw) async {
+    final n = raw.trim();
+    if (n.isEmpty) throw const AppException('账本名不能为空');
+    if (n.length > maxNameLength) {
+      throw const AppException('账本名不能超过 $maxNameLength 个字');
+    }
+    return n;
+  }
+
+  Future<void> _ensureUnique(String name, {int? excludeId}) async {
+    final cnt = Sqflite.firstIntValue(
+      await _db.query(
+        'ledgers',
+        columns: ['COUNT(*)'],
+        where:
+            'deleted = 0 AND name = ?${excludeId != null ? ' AND id != ?' : ''}',
+        whereArgs: excludeId != null ? [name, excludeId] : [name],
+      ),
+    );
+    if ((cnt ?? 0) > 0) throw const AppException('已存在同名账本');
+  }
+}
+
 /// 账单仓储。所有查询默认过滤软删除数据。
 class TransactionRepository {
   TransactionRepository(this._db);
@@ -344,16 +473,64 @@ class TransactionRepository {
   }
 
   /// 某月全部账单，按日期倒序、同日按时间倒序。
-  Future<List<LedgerTransaction>> listByMonth(String monthKey) async {
+  /// [ledgerId] 为 null 时聚合全部账本。
+  Future<List<LedgerTransaction>> listByMonth(
+    String monthKey, {
+    int? ledgerId,
+  }) async {
     final rows = await _db.query(
       'transactions',
-      where: 'deleted = 0 AND substr(dateKey, 1, 7) = ?',
-      whereArgs: [monthKey],
+      where:
+          'deleted = 0 AND substr(dateKey, 1, 7) = ?'
+          '${ledgerId != null ? ' AND ledger_id = ?' : ''}',
+      whereArgs: ledgerId != null ? [monthKey, ledgerId] : [monthKey],
       orderBy: 'dateKey DESC, timestamp DESC, id DESC',
     );
     final txs = rows.map(LedgerTransaction.fromMap).toList();
     final attMap = await _attachmentMapFor(txs);
     return txs.map((t) => _withAttachments(t, attMap)).toList();
+  }
+
+  /// 按 id 取单笔账单（详情页编辑后刷新用）。已删除或不存在返回 null。
+  Future<LedgerTransaction?> byId(int id) async {
+    final rows = await _db.query(
+      'transactions',
+      where: 'id = ? AND deleted = 0',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final tx = LedgerTransaction.fromMap(rows.first);
+    final attMap = await _attachmentMapFor([tx]);
+    return _withAttachments(tx, attMap);
+  }
+
+  /// 单日账单组（当日明细页用）。账单为空返回 null。
+  Future<DayGroup?> dayGroup(String dateKey, {int? ledgerId}) async {
+    final rows = await _db.query(
+      'transactions',
+      where:
+          'deleted = 0 AND dateKey = ?'
+          '${ledgerId != null ? ' AND ledger_id = ?' : ''}',
+      whereArgs: ledgerId != null ? [dateKey, ledgerId] : [dateKey],
+      orderBy: 'timestamp DESC, id DESC',
+    );
+    if (rows.isEmpty) return null;
+    final txs = rows.map(LedgerTransaction.fromMap).toList();
+    final attMap = await _attachmentMapFor(txs);
+    final g = DayGroup(dateKey: dateKey);
+    for (final t in txs.map((t) => _withAttachments(t, attMap))) {
+      g.transactions.add(t);
+      switch (t.type) {
+        case TxType.expense:
+          g.expenseCents += t.amountCents;
+        case TxType.income:
+          g.incomeCents += t.amountCents;
+        case TxType.transfer:
+          break;
+      }
+    }
+    return g;
   }
 
   /// 拉取给定账单集合的附件映射（tx_id -> [path]）。
@@ -400,12 +577,13 @@ class TransactionRepository {
   }
 
   /// 单日收支汇总（不含转账），今日概览卡用。
-  Future<MonthSummary> daySummary(String dateKey) async {
+  Future<MonthSummary> daySummary(String dateKey, {int? ledgerId}) async {
     final rows = await _db.rawQuery(
       'SELECT COALESCE(SUM(CASE WHEN type = 1 THEN amount END), 0) AS expense, '
       'COALESCE(SUM(CASE WHEN type = 2 THEN amount END), 0) AS income '
-      'FROM transactions WHERE deleted = 0 AND dateKey = ?',
-      [dateKey],
+      'FROM transactions WHERE deleted = 0 AND dateKey = ?'
+      '${ledgerId != null ? ' AND ledger_id = ?' : ''}',
+      ledgerId != null ? [dateKey, ledgerId] : [dateKey],
     );
     return MonthSummary(
       expenseCents: (rows.first['expense'] as int?) ?? 0,
@@ -415,19 +593,25 @@ class TransactionRepository {
 
   /// 按天分页懒加载：日期倒序，返回 [offset, offset + limit) 窗口内的天，
   /// 每天带当日全部账单与收支小计。返回天数少于 limit 即没有更多。
-  Future<List<DayGroup>> listDaysPaged({int limit = 15, int offset = 0}) async {
+  Future<List<DayGroup>> listDaysPaged({
+    int limit = 15,
+    int offset = 0,
+    int? ledgerId,
+  }) async {
+    final ledgerCond = ledgerId != null ? ' AND ledger_id = ?' : '';
+    final ledgerArgs = ledgerId != null ? [ledgerId] : const <Object?>[];
     final dayRows = await _db.rawQuery(
-      'SELECT dateKey FROM transactions WHERE deleted = 0 '
+      'SELECT dateKey FROM transactions WHERE deleted = 0$ledgerCond '
       'GROUP BY dateKey ORDER BY dateKey DESC LIMIT ? OFFSET ?',
-      [limit, offset],
+      [...ledgerArgs, limit, offset],
     );
     if (dayRows.isEmpty) return const [];
     final keys = [for (final r in dayRows) r['dateKey'] as String];
     final placeholders = List.filled(keys.length, '?').join(',');
     final txRows = await _db.query(
       'transactions',
-      where: 'deleted = 0 AND dateKey IN ($placeholders)',
-      whereArgs: keys,
+      where: 'deleted = 0 AND dateKey IN ($placeholders)$ledgerCond',
+      whereArgs: [...keys, ...ledgerArgs],
       orderBy: 'dateKey DESC, timestamp DESC, id DESC',
     );
     final byDay = <String, DayGroup>{};
@@ -488,12 +672,13 @@ class TransactionRepository {
   }
 
   /// 月度收支汇总（不含转账）。
-  Future<MonthSummary> monthSummary(String monthKey) async {
+  Future<MonthSummary> monthSummary(String monthKey, {int? ledgerId}) async {
     final rows = await _db.rawQuery(
       'SELECT COALESCE(SUM(CASE WHEN type = 1 THEN amount END), 0) AS expense, '
       'COALESCE(SUM(CASE WHEN type = 2 THEN amount END), 0) AS income '
-      'FROM transactions WHERE deleted = 0 AND substr(dateKey, 1, 7) = ?',
-      [monthKey],
+      'FROM transactions WHERE deleted = 0 AND substr(dateKey, 1, 7) = ?'
+      '${ledgerId != null ? ' AND ledger_id = ?' : ''}',
+      ledgerId != null ? [monthKey, ledgerId] : [monthKey],
     );
     return MonthSummary(
       expenseCents: (rows.first['expense'] as int?) ?? 0,
@@ -502,18 +687,29 @@ class TransactionRepository {
   }
 
   /// 统计页：某月按分类聚合（支出或收入）。已删除分类回退名称。
-  Future<List<CategoryStat>> categorySums(String monthKey, TxType type) async {
+  Future<List<CategoryStat>> categorySums(
+    String monthKey,
+    TxType type, {
+    int? ledgerId,
+  }) async {
     final rows = await _db.rawQuery(
       '''
-      SELECT t.categoryId AS cid, c.name AS name, c.iconCode AS iconCode,
+      SELECT t.categoryId AS cid,
+             CASE WHEN c.deleted = 1 THEN '其他' ELSE c.name END AS name,
+             c.iconCode AS iconCode,
              c.colorValue AS colorValue, SUM(t.amount) AS s, COUNT(t.id) AS cnt
       FROM transactions t
       LEFT JOIN categories c ON c.id = t.categoryId
       WHERE t.deleted = 0 AND t.type = ? AND substr(t.dateKey, 1, 7) = ?
+      ${ledgerId != null ? 'AND t.ledger_id = ?' : ''}
       GROUP BY t.categoryId
       ORDER BY s DESC
       ''',
-      [type.code, monthKey],
+      [
+        type.code,
+        monthKey,
+        ?ledgerId,
+      ],
     );
     return rows.map((r) {
       final sum = (r['s'] as int?) ?? 0;
@@ -529,14 +725,18 @@ class TransactionRepository {
   }
 
   /// 趋势：给定月份集合（升序）的收支汇总，缺失月份补零。
-  Future<List<MonthTypeStat>> monthlySums(List<String> monthKeys) async {
+  Future<List<MonthTypeStat>> monthlySums(
+    List<String> monthKeys, {
+    int? ledgerId,
+  }) async {
     if (monthKeys.isEmpty) return const [];
     final ph = List.filled(monthKeys.length, '?').join(', ');
     final rows = await _db.rawQuery(
       'SELECT substr(dateKey, 1, 7) AS m, type, SUM(amount) AS s '
       'FROM transactions WHERE deleted = 0 AND type IN (1, 2) '
+      '${ledgerId != null ? 'AND ledger_id = ? ' : ''}'
       "AND substr(dateKey, 1, 7) IN ($ph) GROUP BY m, type",
-      monthKeys,
+      [?ledgerId, ...monthKeys],
     );
     final map = <String, MonthTypeStat>{
       for (final k in monthKeys)
@@ -627,12 +827,17 @@ class TransactionRepository {
   }
 
   /// 时段收支汇总：dateKey 范围 [from, to) 左闭右开。
-  Future<MonthSummary> periodSummary(String from, String to) async {
+  Future<MonthSummary> periodSummary(
+    String from,
+    String to, {
+    int? ledgerId,
+  }) async {
     final rows = await _db.rawQuery(
       'SELECT COALESCE(SUM(CASE WHEN type = 1 THEN amount END), 0) AS expense, '
       'COALESCE(SUM(CASE WHEN type = 2 THEN amount END), 0) AS income '
-      'FROM transactions WHERE deleted = 0 AND dateKey >= ? AND dateKey < ?',
-      [from, to],
+      'FROM transactions WHERE deleted = 0 AND dateKey >= ? AND dateKey < ?'
+      '${ledgerId != null ? ' AND ledger_id = ?' : ''}',
+      [from, to, ?ledgerId],
     );
     return MonthSummary(
       expenseCents: (rows.first['expense'] as int?) ?? 0,
@@ -646,12 +851,14 @@ class TransactionRepository {
     String from,
     String to, {
     required List<String> allDates,
+    int? ledgerId,
   }) async {
     final rows = await _db.rawQuery(
       'SELECT dateKey AS d, type, SUM(amount) AS s '
       'FROM transactions WHERE deleted = 0 AND type IN (1, 2) '
+      '${ledgerId != null ? 'AND ledger_id = ? ' : ''}'
       'AND dateKey >= ? AND dateKey < ? GROUP BY d, type ORDER BY d',
-      [from, to],
+      [?ledgerId, from, to],
     );
     final map = <String, DailyTypeStat>{};
     for (final r in rows) {
@@ -682,17 +889,21 @@ class TransactionRepository {
   Future<List<CategoryStat>> categorySumsForPeriod(
     String from,
     String to,
-    TxType type,
-  ) async {
+    TxType type, {
+    int? ledgerId,
+  }) async {
     final rows = await _db.rawQuery(
-      'SELECT t.categoryId AS cid, c.name AS name, c.iconCode AS iconCode, '
+      'SELECT t.categoryId AS cid, '
+      "CASE WHEN c.deleted = 1 THEN '其他' ELSE c.name END AS name, "
+      'c.iconCode AS iconCode, '
       'c.colorValue AS colorValue, SUM(t.amount) AS s, COUNT(t.id) AS cnt '
       'FROM transactions t '
       'LEFT JOIN categories c ON c.id = t.categoryId '
       'WHERE t.deleted = 0 AND t.type = ? '
+      '${ledgerId != null ? 'AND t.ledger_id = ? ' : ''}'
       'AND t.dateKey >= ? AND t.dateKey < ? '
       'GROUP BY t.categoryId ORDER BY s DESC',
-      [type.code, from, to],
+      [type.code, ?ledgerId, from, to],
     );
     return rows.map((r) {
       final name = r['name'] as String? ?? S.unknownCategory;
@@ -733,11 +944,19 @@ class TransactionRepository {
     String to,
     TxType type, {
     int limit = 50,
+    int? ledgerId,
   }) async {
     final rows = await _db.query(
       'transactions',
-      where: 'deleted = 0 AND type = ? AND dateKey >= ? AND dateKey < ?',
-      whereArgs: [type.code, from, to],
+      where:
+          'deleted = 0 AND type = ? AND dateKey >= ? AND dateKey < ?'
+          '${ledgerId != null ? ' AND ledger_id = ?' : ''}',
+      whereArgs: [
+        type.code,
+        from,
+        to,
+        ?ledgerId,
+      ],
       orderBy: 'amount DESC, dateKey DESC, id DESC LIMIT $limit',
     );
     final txs = rows.map(LedgerTransaction.fromMap).toList();

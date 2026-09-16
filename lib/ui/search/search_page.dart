@@ -178,7 +178,7 @@ class _ResultTile extends StatelessWidget {
     final isTransfer = tx.type == TxType.transfer;
     final title = isTransfer
         ? '转账'
-        : data.categories[tx.categoryId]?.name ?? S.unknownCategory;
+        : data.categories[tx.categoryId]?.displayName ?? S.unknownCategory;
     final account = data.accounts[tx.accountId]?.name ?? '未知账户';
     final note = (tx.note == null || tx.note!.isEmpty) ? '' : ' · ${tx.note}';
     final subtitle = '${DateKeys.dayLabel(tx.dateKey)} · $account$note';

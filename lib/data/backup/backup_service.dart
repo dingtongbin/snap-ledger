@@ -1,7 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
+import 'package:cryptography/cryptography.dart';
+import 'package:flutter/material.dart' show Icons;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -25,11 +29,112 @@ class BackupService {
 
   final Database _db;
 
-  static const int formatVersion = 2;
+  static const int formatVersion = 3;
   static const String appTag = 'bookkeeping';
   static const String backupDirName = 'BookkeepingBackup';
   static const String _jsonEntryName = 'backup.json';
   static const String _attachmentsPrefix = 'attachments/';
+
+  // ── 加密容器格式 ──
+  // 文件布局：magic(6) + salt(16) + nonce(12) + mac(16) + AES-256-GCM(zip 字节)。
+  // 密钥由 PBKDF2-HMAC-SHA256(密码, salt, 12 万轮) 派生；密码不落盘。
+  // 无密码导出 = 明文 zip（不带 magic 头），恢复时按头部自动识别。
+  static final List<int> _magic = utf8.encode('BSJENC');
+  static const int _saltLen = 16;
+  static const int _nonceLen = 12;
+  static const int _macLen = 16;
+  static const int _pbkdf2Rounds = 120000;
+
+  static bool _isEncrypted(List<int> bytes) {
+    if (bytes.length < _magic.length) return false;
+    for (var i = 0; i < _magic.length; i++) {
+      if (bytes[i] != _magic[i]) return false;
+    }
+    return true;
+  }
+
+  /// 用密码加密 zip 字节，返回容器完整字节（含 magic 头）。
+  static Future<Uint8List> _encryptZip(
+    List<int> zipBytes,
+    String password,
+  ) async {
+    final algo = AesGcm.with256bits();
+    final salt = _randomBytes(_saltLen);
+    final kdf = Pbkdf2(
+      macAlgorithm: Hmac.sha256(),
+      iterations: _pbkdf2Rounds,
+      bits: 256,
+    );
+    final keyBytes = await (await kdf.deriveKey(
+      secretKey: SecretKey(utf8.encode(password)),
+      nonce: salt,
+    )).extractBytes();
+    final box = await algo.encrypt(
+      zipBytes,
+      secretKey: SecretKey(keyBytes),
+    );
+    final out = BytesBuilder();
+    out.add(_magic);
+    out.add(salt);
+    out.add(box.nonce);
+    out.add(box.mac.bytes);
+    out.add(box.cipherText);
+    return out.toBytes();
+  }
+
+  /// 解开加密容器，返回内层 zip 字节。密码错误 / 数据损坏抛异常。
+  static Future<Uint8List> _decryptZip(
+    List<int> bytes,
+    String password,
+  ) async {
+    if (bytes.length < _magic.length + _saltLen + _nonceLen + _macLen) {
+      throw const AppException('备份文件已损坏');
+    }
+    final salt = bytes.sublist(_magic.length, _magic.length + _saltLen);
+    final nonceStart = _magic.length + _saltLen;
+    final nonce = bytes.sublist(nonceStart, nonceStart + _nonceLen);
+    final macStart = nonceStart + _nonceLen;
+    final mac = bytes.sublist(macStart, macStart + _macLen);
+    final cipher = bytes.sublist(macStart + _macLen);
+
+    final algo = AesGcm.with256bits();
+    final kdf = Pbkdf2(
+      macAlgorithm: Hmac.sha256(),
+      iterations: _pbkdf2Rounds,
+      bits: 256,
+    );
+    final keyBytes = await (await kdf.deriveKey(
+      secretKey: SecretKey(utf8.encode(password)),
+      nonce: salt,
+    )).extractBytes();
+    try {
+      final clear = await algo.decrypt(
+        SecretBox(cipher, nonce: nonce, mac: Mac(mac)),
+        secretKey: SecretKey(keyBytes),
+      );
+      return Uint8List.fromList(clear);
+    } catch (_) {
+      throw const AppException('密码错误，或备份文件已损坏');
+    }
+  }
+
+  static Uint8List _randomBytes(int len) {
+    final r = Random.secure();
+    return Uint8List.fromList(
+      List<int>.generate(len, (_) => r.nextInt(256)),
+    );
+  }
+
+  /// 判断备份文件是否加密（供 UI 决定是否先弹密码框）。
+  static Future<bool> isEncryptedFile(String path) async {
+    final f = File(path);
+    if (!await f.exists()) return false;
+    final head = await f.openRead(0, _magic.length).fold<List<int>>(
+      <int>[],
+      (acc, chunk) => acc..addAll(chunk),
+    );
+    return _isEncrypted(head);
+  }
 
   /// 生成 JSON 备份字符串（attachments 路径记录在案，调用方负责落盘）。
   Future<String> exportJson() async {
@@ -40,6 +145,7 @@ class BackupService {
       'exportedAt': DateTime.now().toIso8601String(),
       'categories': await _db.query('categories', orderBy: 'id'),
       'accounts': await _db.query('accounts', orderBy: 'id'),
+      'ledgers': await _db.query('ledgers', orderBy: 'id'),
       'transactions': await _db.query('transactions', orderBy: 'id'),
       'attachments': await _db.query('attachments', orderBy: 'tx_id, sort'),
     };
@@ -47,14 +153,18 @@ class BackupService {
   }
 
   /// 导出完整备份（zip：backup.json + attachments 图片）到文档目录，
-  /// 返回 zip 绝对路径。
-  Future<String> exportBackupToFile() async {
+  /// 返回文件绝对路径。
+  ///
+  /// [password] 非空时整体 AES-256-GCM 加密（文件扩展名 .zip 不变，
+  /// 内容为加密容器）；为空则输出明文 zip，恢复时自动识别。
+  Future<String> exportBackupToFile({String? password}) async {
     final dir = await _ensureBackupDir();
     final stamp = DateTime.now()
         .toIso8601String()
         .substring(0, 19)
         .replaceAll(RegExp(r'[:T]'), '-');
-    final zipPath = p.join(dir, 'bookkeeping_$stamp.zip');
+    final suffix = (password != null && password.isNotEmpty) ? '.加密' : '';
+    final outPath = p.join(dir, 'bookkeeping_$stamp$suffix.zip');
 
     final archive = Archive();
     // 1. backup.json
@@ -69,13 +179,14 @@ class BackupService {
         ArchiveFile('$_attachmentsPrefix${p.basename(f.path)}', bytes.length, bytes),
       );
     }
-    final output = File(zipPath);
+    var payload = ZipEncoder().encode(archive)!.toList();
+    if (password != null && password.isNotEmpty) {
+      payload = await _encryptZip(payload, password);
+    }
+    final output = File(outPath);
     await output.parent.create(recursive: true);
-    await output.writeAsBytes(
-      ZipEncoder().encode(archive)!.toList(),
-      flush: true,
-    );
-    return zipPath;
+    await output.writeAsBytes(payload, flush: true);
+    return outPath;
   }
 
   /// 兼容旧入口：仅导出 JSON 字符串（不含图片）。
@@ -88,9 +199,23 @@ class BackupService {
     return file;
   }
 
-  /// 恢复 zip 备份：解出 backup.json 入库 + 图片写到本地 attachments。
-  Future<RestoreResult> restoreZipFile(String zipPath) async {
-    final bytes = await File(zipPath).readAsBytes();
+  /// 恢复备份文件：自动识别明文 zip / 加密容器。
+  /// [password] 仅在文件加密时需要；密码错误抛 AppException。
+  Future<RestoreResult> restoreZipFile(
+    String zipPath, {
+    String? password,
+  }) async {
+    final raw = await File(zipPath).readAsBytes();
+    final Uint8List bytes;
+    if (_isEncrypted(raw)) {
+      final pw = password;
+      if (pw == null || pw.isEmpty) {
+        throw const AppException('该备份已加密，请输入密码');
+      }
+      bytes = await _decryptZip(raw, pw);
+    } else {
+      bytes = raw;
+    }
     final archive = ZipDecoder().decodeBytes(bytes);
 
     final jsonEntry = archive.findFile(_jsonEntryName);
@@ -155,6 +280,10 @@ class BackupService {
     final attRows = decoded['attachments'] is List
         ? decoded['attachments'] as List
         : <Object?>[];
+    // v2 及更早的备份没有账本数据：恢复后保证默认账本存在。
+    final ledgerRows = decoded['ledgers'] is List
+        ? decoded['ledgers'] as List
+        : null;
 
     // 恢复图片：把 zip 里的临时文件写入本地 attachments，
     // 建立「旧路径 -> 新路径」映射。
@@ -176,9 +305,26 @@ class BackupService {
       await txn.delete('categories');
       await txn.delete('accounts');
       await txn.delete('attachments');
+      await txn.delete('ledgers');
       cats = await _insertAll(txn, 'categories', catRows);
       accs = await _insertAll(txn, 'accounts', accRows);
       txs = await _insertAll(txn, 'transactions', txRows);
+      if (ledgerRows != null) {
+        await _insertAll(txn, 'ledgers', ledgerRows);
+      } else {
+        // 旧备份无账本：幂等补默认账本（账单 ledger_id 默认 1）。
+        await txn.insert('ledgers', {
+          'id': 1,
+          'name': '默认账本',
+          'iconCode': Icons.menu_book.codePoint,
+          'colorValue': 0xFF409EFF,
+          'sort': 0,
+          'deleted': 0,
+          'builtin': 1,
+          'createdAt': DateTime.now().millisecondsSinceEpoch,
+          'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
       // attachments 表：路径映射到本地新路径。
       for (final row in attRows) {
         if (row is! Map) continue;
@@ -221,7 +367,7 @@ class BackupService {
       orderBy: 'dateKey DESC, id DESC',
     );
     final buf = StringBuffer('\uFEFF');
-    buf.writeln('id,类型,金额(元),日期,备注,账户ID,分类ID,转入账户ID,已删除,创建时间');
+    buf.writeln('id,类型,金额(元),日期,备注,账本ID,账户ID,分类ID,转入账户ID,已删除,创建时间');
     for (final r in rows) {
       final yuan = ((r['amount'] as int) / 100).toStringAsFixed(2);
       buf.writeln(
@@ -233,6 +379,7 @@ class BackupService {
           yuan,
           r['dateKey'],
           _csv(r['note']),
+          r['ledger_id'],
           r['accountId'],
           r['categoryId'],
           r['targetAccountId'],

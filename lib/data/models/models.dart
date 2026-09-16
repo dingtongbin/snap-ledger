@@ -19,6 +19,61 @@ enum TxType {
   );
 }
 
+/// 账本。账单归属某一账本；查询可按账本过滤或聚合全部账本。
+/// 默认账本（id=1）内置不可删除；删除账本要求其下无账单。
+class LedgerBook {
+  const LedgerBook({
+    this.id,
+    required this.name,
+    required this.iconCode,
+    required this.colorValue,
+    this.sort = 0,
+    this.deleted = false,
+    this.builtin = false,
+    this.createdAt = 0,
+    this.updatedAt = 0,
+  });
+
+  final int? id;
+  final String name;
+
+  /// Material 图标 codePoint，避免存储 IconData 对象。
+  final int iconCode;
+  final int colorValue;
+  final int sort;
+  final bool deleted;
+  final bool builtin;
+  final int createdAt;
+  final int updatedAt;
+
+  IconData get icon => AppIcons.of(iconCode);
+  Color get color => Color(colorValue);
+
+  static LedgerBook fromMap(Map<String, Object?> m) => LedgerBook(
+    id: m['id'] as int?,
+    name: m['name'] as String,
+    iconCode: m['iconCode'] as int,
+    colorValue: m['colorValue'] as int,
+    sort: (m['sort'] as int?) ?? 0,
+    deleted: ((m['deleted'] as int?) ?? 0) == 1,
+    builtin: ((m['builtin'] as int?) ?? 0) == 1,
+    createdAt: (m['createdAt'] as int?) ?? 0,
+    updatedAt: (m['updatedAt'] as int?) ?? 0,
+  );
+
+  Map<String, Object?> toMap() => {
+    if (id != null) 'id': id,
+    'name': name,
+    'iconCode': iconCode,
+    'colorValue': colorValue,
+    'sort': sort,
+    'deleted': deleted ? 1 : 0,
+    'builtin': builtin ? 1 : 0,
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
+  };
+}
+
 /// 分类（仅支出/收入两类；转账无分类）。
 class TxCategory {
   const TxCategory({
@@ -54,6 +109,9 @@ class TxCategory {
 
   IconData get icon => AppIcons.of(iconCode);
   Color get color => Color(colorValue);
+
+  /// 展示名：分类被软删除后，其历史账单统一显示为「其他」。
+  String get displayName => deleted ? '其他' : name;
 
   static TxCategory fromMap(Map<String, Object?> m) => TxCategory(
     id: m['id'] as int?,
@@ -188,6 +246,7 @@ class LedgerTransaction {
     required this.dateKey,
     required this.timestamp,
     required this.note,
+    this.ledgerId = 1,
     this.imagePaths = const [],
     this.deleted = false,
     this.createdAt = 0,
@@ -202,6 +261,9 @@ class LedgerTransaction {
   final int? categoryId;
   final int accountId;
   final int? targetAccountId;
+
+  /// 归属账本 id；1 = 默认账本。
+  final int ledgerId;
 
   /// 归属日（本地时区 yyyy-MM-dd）。
   final String dateKey;
@@ -228,6 +290,7 @@ class LedgerTransaction {
     dateKey: m['dateKey'] as String,
     timestamp: (m['timestamp'] as int?) ?? 0,
     note: m['note'] as String?,
+    ledgerId: (m['ledger_id'] as int?) ?? 1,
     deleted: ((m['deleted'] as int?) ?? 0) == 1,
     createdAt: (m['createdAt'] as int?) ?? 0,
     updatedAt: (m['updatedAt'] as int?) ?? 0,
@@ -243,6 +306,7 @@ class LedgerTransaction {
     'dateKey': dateKey,
     'timestamp': timestamp,
     'note': note,
+    'ledger_id': ledgerId,
     'deleted': deleted ? 1 : 0,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
@@ -250,8 +314,12 @@ class LedgerTransaction {
 
   /// 仅用于仓储层更新时间戳；账单字段变更请直接构造新实例，
   /// 避免可空参数语义歧义。
-  LedgerTransaction copyWith({int? updatedAt, bool? deleted, List<String>? imagePaths}) =>
-      LedgerTransaction(
+  LedgerTransaction copyWith({
+    int? updatedAt,
+    bool? deleted,
+    List<String>? imagePaths,
+    int? ledgerId,
+  }) => LedgerTransaction(
         id: id,
         type: type,
         amountCents: amountCents,
@@ -261,6 +329,7 @@ class LedgerTransaction {
         dateKey: dateKey,
         timestamp: timestamp,
         note: note,
+        ledgerId: ledgerId ?? this.ledgerId,
         imagePaths: imagePaths ?? this.imagePaths,
         deleted: deleted ?? this.deleted,
         createdAt: createdAt,

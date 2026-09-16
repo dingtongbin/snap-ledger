@@ -52,6 +52,29 @@ Future<AccountEditResult?> showAccountEditDialog(
   return AccountEditResult(r.$1, r.$2);
 }
 
+/// 新建/编辑账本结果（尚未入库）。
+class BookEditResult {
+  const BookEditResult(this.name, this.iconCode);
+
+  final String name;
+  final int iconCode;
+}
+
+/// 新建/编辑账本。
+Future<BookEditResult?> showBookEditDialog(
+  BuildContext context, {
+  LedgerBook? initial,
+}) async {
+  final r = await _showEditDialog(
+    context,
+    title: initial == null ? '新建账本' : '编辑账本',
+    initialName: initial?.name ?? '',
+    initialIcon: initial?.icon ?? DefaultData.iconChoices.first,
+  );
+  if (r == null) return null;
+  return BookEditResult(r.$1, r.$2);
+}
+
 /// 返回 (名称, 图标codePoint)。
 Future<(String, int)?> _showEditDialog(
   BuildContext context, {

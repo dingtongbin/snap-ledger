@@ -8,7 +8,7 @@ import '../state/ledger_controller.dart';
 import '../state/settings_controller.dart';
 import 'add/add_record_page.dart';
 import 'detail/detail_page.dart';
-import 'mine/backup_page.dart';
+import 'help/help_page.dart';
 import 'mine/mine_page.dart';
 import 'stats/stats_page.dart';
 
@@ -24,8 +24,8 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   int _index = 0; // 默认「明细」
 
-  /// 导航项序号：0 明细 / 1 报表 / 3 备份 / 4 设置（2 是「＋」，不切页）。
-  static const int _backupIndex = 3;
+  /// 导航项序号：0 明细 / 1 报表 / 3 帮助 / 4 设置（2 是「＋」，不切页）。
+  static const int _helpIndex = 3;
   static const int _mineIndex = 4;
 
   @override
@@ -72,10 +72,10 @@ class _RootShellState extends State<RootShell> {
         // 导航序号 -> 页面栈序号：明细0 / 图表1 / 备份2 / 设置3。
         index: _index == _mineIndex
             ? 3
-            : _index == _backupIndex
+            : _index == _helpIndex
             ? 2
             : _index,
-        children: const [DetailPage(), StatsPage(), BackupPage(), MinePage()],
+        children: const [DetailPage(), StatsPage(), HelpPage(), MinePage()],
       ),
       bottomNavigationBar: BottomAppBar(
         child: SafeArea(
@@ -87,7 +87,7 @@ class _RootShellState extends State<RootShell> {
                 _item(0, Icons.receipt_long_outlined, S.tabDetail, cs),
                 _item(1, Icons.donut_large_outlined, S.tabStats, cs),
                 _addButton(cs),
-                _item(_backupIndex, Icons.backup_outlined, S.tabBackup, cs),
+                _item(_helpIndex, Icons.help_outline, S.tabHelp, cs),
                 _item(_mineIndex, Icons.settings_outlined, S.tabMine, cs),
               ],
             ),
