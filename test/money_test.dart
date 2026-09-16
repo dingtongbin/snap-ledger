@@ -110,10 +110,10 @@ void main() {
       expect(a.isZeroOrEmpty, isFalse);
     });
 
-    test('fromCents 由分还原可编辑输入', () {
-      expect(AmountInput.fromCents(0), '0');
+    test('fromCents 由分还原可编辑输入（固定两位小数，与详情展示一致）', () {
+      expect(AmountInput.fromCents(0), '0.00');
       expect(AmountInput.fromCents(1205), '12.05');
-      expect(AmountInput.fromCents(1200), '12');
+      expect(AmountInput.fromCents(1200), '12.00');
       expect(AmountInput.fromCents(5), '0.05');
     });
   });

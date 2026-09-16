@@ -23,7 +23,7 @@ class AppDatabase {
 
   /// 当前数据库 schema 版本。每次变更 schema 必须 +1 并在
   /// [_onUpgrade] 追加迁移分支。备份格式的 schemaVersion 字段用于校验兼容性。
-  static const int schemaVersion = 3;
+  static const int schemaVersion = 4;
 
   Database? _db;
 
@@ -77,6 +77,57 @@ class AppDatabase {
     if (oldVersion < 3) {
       await _migrateV3(db);
     }
+    // v3 → v4：账本，ledgers 表 + transactions.ledger_id。
+    if (oldVersion < 4) {
+      await _migrateV4(db);
+    }
+  }
+
+  /// v4 迁移：新增账本体系。默认账本 id=1 内置；存量账单全部归入默认账本。
+  static Future<void> _migrateV4(Database db) async {
+    await _createLedgersTable(db);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.insert(
+      'ledgers',
+      {
+        'id': 1,
+        'name': '默认账本',
+        'iconCode': Icons.menu_book.codePoint,
+        'colorValue': 0xFF409EFF,
+        'sort': 0,
+        'deleted': 0,
+        'builtin': 1,
+        'createdAt': now,
+        'updatedAt': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    final cols = await db.rawQuery('PRAGMA table_info(transactions)');
+    final hasLedger = cols.any((c) => c['name'] == 'ledger_id');
+    if (!hasLedger) {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN ledger_id INTEGER NOT NULL DEFAULT 1',
+      );
+    }
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tx_ledger ON transactions (ledger_id, deleted)',
+    );
+  }
+
+  static Future<void> _createLedgersTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ledgers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        iconCode INTEGER NOT NULL,
+        colorValue INTEGER NOT NULL,
+        sort INTEGER NOT NULL DEFAULT 0,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        builtin INTEGER NOT NULL DEFAULT 0,
+        createdAt INTEGER NOT NULL DEFAULT 0,
+        updatedAt INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   /// v3 迁移：新增 attachments 表，记录账单图片。
@@ -204,11 +255,14 @@ class AppDatabase {
         dateKey TEXT NOT NULL,
         timestamp INTEGER NOT NULL DEFAULT 0,
         note TEXT,
+        ledger_id INTEGER NOT NULL DEFAULT 1,
         deleted INTEGER NOT NULL DEFAULT 0,
         createdAt INTEGER NOT NULL DEFAULT 0,
         updatedAt INTEGER NOT NULL DEFAULT 0
       )
     ''');
+    // 账本：账单归属分组，默认账本 id=1 内置。
+    await _createLedgersTable(db);
     // 高频查询路径建索引：按月列账、按分类统计、按账户汇总。
     await db.execute(
       'CREATE INDEX idx_tx_month ON transactions (dateKey, deleted)',
@@ -218,6 +272,9 @@ class AppDatabase {
     );
     await db.execute(
       'CREATE INDEX idx_tx_account ON transactions (accountId, deleted)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_tx_ledger ON transactions (ledger_id, deleted)',
     );
     // 账单附件（图片）：通过 tx_id 关联，物理文件存放在应用文档目录。
     await db.execute('''
@@ -281,6 +338,24 @@ class AppDatabase {
         });
       }
       await batch.commit(noResult: true);
+    }
+    empty =
+        Sqflite.firstIntValue(
+          await db.query('ledgers', columns: ['COUNT(*)']),
+        ) ==
+        0;
+    if (empty) {
+      await db.insert('ledgers', {
+        'id': 1,
+        'name': '默认账本',
+        'iconCode': Icons.menu_book.codePoint,
+        'colorValue': 0xFF409EFF,
+        'sort': 0,
+        'deleted': 0,
+        'builtin': 1,
+        'createdAt': now,
+        'updatedAt': now,
+      });
     }
   }
 

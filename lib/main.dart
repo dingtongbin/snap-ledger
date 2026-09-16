@@ -21,6 +21,7 @@ import 'core/strings.dart';
 import 'core/theme.dart';
 import 'data/backup/backup_service.dart';
 import 'data/repositories/repositories.dart';
+import 'state/book_controller.dart';
 import 'state/ledger_controller.dart';
 import 'state/settings_controller.dart';
 import 'ui/root_shell.dart';
@@ -57,6 +58,10 @@ class BookkeepingApp extends StatelessWidget {
   final Database db;
   final SharedPreferences prefs;
 
+  /// 全局 messenger：页面 pop 后仍可投递 Snackbar（如详情页删除的「撤销」）。
+  static final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -68,17 +73,24 @@ class BookkeepingApp extends StatelessWidget {
           create: (_) => TransactionRepository(db),
         ),
         Provider<BackupService>(create: (_) => BackupService(db)),
+        Provider<LedgerBookRepository>(create: (_) => LedgerBookRepository(db)),
         ChangeNotifierProvider<SettingsController>(
           create: (_) => SettingsController(prefs),
         ),
         ChangeNotifierProvider<LedgerController>(
           create: (_) => LedgerController(),
         ),
+        // 账本选择：启动即加载（表为空时数据库种子保证默认账本存在）。
+        ChangeNotifierProvider<BookController>(
+          create: (context) =>
+              BookController(context.read<LedgerBookRepository>())..load(),
+        ),
       ],
       child: Consumer<SettingsController>(
         builder: (context, settings, _) => MaterialApp(
           title: S.appName,
           debugShowCheckedModeBanner: false,
+          scaffoldMessengerKey: BookkeepingApp.scaffoldMessengerKey,
           theme: AppTheme.light(settings.seedColor),
           darkTheme: AppTheme.dark(settings.seedColor),
           themeMode: settings.themeMode,

@@ -92,9 +92,11 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
               ),
               trailing: PopupMenuButton<String>(
                 onSelected: (v) => v == 'edit' ? _edit(c) : _delete(c),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text(S.edit)),
-                  PopupMenuItem(value: 'delete', child: Text(S.delete)),
+                // 默认分类只能编辑，不能删除；仅自定义分类提供删除。
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'edit', child: Text(S.edit)),
+                  if (!c.builtin)
+                    const PopupMenuItem(value: 'delete', child: Text(S.delete)),
                 ],
               ),
             );
@@ -146,6 +148,10 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
 
   Future<void> _delete(TxCategory c) async {
     if (c.id == null) return;
+    if (c.builtin) {
+      showToast(context, '默认分类不能删除');
+      return;
+    }
     final repo = context.read<CategoryRepository>();
     final used = await repo.countByCategory(c.id!);
     if (!mounted) return;
@@ -153,7 +159,8 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
       context,
       title: '删除分类「${c.name}」？',
       content: used > 0
-          ? '该分类下有 $used 笔账单，删除后这些账单仍会保留，分类显示为「${S.unknownCategory}」。'
+          ? '该分类下有 $used 笔账单。删除后这些账单仍会保留，'
+                '它们的分类将显示并归入「其他」，此操作不可撤销。'
           : '删除后可在分类列表中重建同名分类。',
       confirmLabel: S.delete,
       danger: true,

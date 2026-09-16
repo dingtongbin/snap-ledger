@@ -8,8 +8,8 @@ class S {
   static const String appSlogan = '本地记账 · 数据不出设备';
 
   // 底部导航
-  static const String tabBackup = '备份';
-  static const String tabDetail = '记账';
+  static const String tabHelp = '帮助';
+  static const String tabDetail = '明细';
   static const String tabStats = '统计';
   static const String tabMine = '设置';
 

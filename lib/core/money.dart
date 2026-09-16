@@ -97,15 +97,8 @@ class AmountInput {
     return true;
   }
 
-  /// 由「分」还原键盘可继续编辑的输入串，如 1205 -> "12.05"。
-  static String fromCents(int cents) {
-    final s = Money.format(cents).replaceAll(',', '');
-    if (!s.contains('.')) return s;
-    var t = s;
-    while (t.endsWith('0')) {
-      t = t.substring(0, t.length - 1);
-    }
-    if (t.endsWith('.')) t = t.substring(0, t.length - 1);
-    return t;
-  }
+  /// 由「分」还原键盘可继续编辑的输入串，固定两位小数与详情展示一致：
+  /// 1205 -> "12.05"、6600 -> "666.00"。
+  static String fromCents(int cents) =>
+      Money.format(cents).replaceAll(',', '');
 }

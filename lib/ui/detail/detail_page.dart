@@ -9,22 +9,50 @@ import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
 import '../../state/ledger_controller.dart';
 import '../../state/settings_controller.dart';
+import '../../state/book_controller.dart';
+import '../calendar/calendar_view.dart';
 import '../search/search_page.dart';
 import '../stats/tx_detail_page.dart';
+import '../widgets/book_picker.dart';
 import '../widgets/common.dart';
 
 /// 记账页：今日概览卡（今日/本月收支 + 月预算进度）+ 按天分组的账单流。
 /// 账单流按天分页懒加载（ListView.builder 懒渲染，滚到尾部加载更多）。
-class DetailPage extends StatelessWidget {
+/// 头部支持切换账本（默认「全部账本」聚合）与 列表/日历 两种视图。
+class DetailPage extends StatefulWidget {
   const DetailPage({super.key});
+
+  @override
+  State<DetailPage> createState() => _DetailPageState();
+}
+
+class _DetailPageState extends State<DetailPage> {
+  var _calendarMode = false;
 
   @override
   Widget build(BuildContext context) {
     final ledger = context.watch<LedgerController>();
+    final books = context.watch<BookController>();
     return Scaffold(
       appBar: AppBar(
-        title: Text(S.tabDetail),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(S.tabDetail),
+            const SizedBox(width: 8),
+            const _BookChip(),
+          ],
+        ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _calendarMode
+                  ? Icons.view_list_outlined
+                  : Icons.calendar_month_outlined,
+            ),
+            tooltip: _calendarMode ? '列表视图' : '日历视图',
+            onPressed: () => setState(() => _calendarMode = !_calendarMode),
+          ),
           IconButton(
             icon: const Icon(Icons.search_outlined),
             tooltip: S.search,
@@ -35,12 +63,63 @@ class DetailPage extends StatelessWidget {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // 概览卡与账单流都随 version 变化整体重建，保证增删改后即时刷新。
-          _TodayOverview(key: ValueKey('overview-${ledger.version}')),
-          Expanded(child: _DayFeed(key: ValueKey('feed-${ledger.version}'))),
-        ],
+      body: _calendarMode
+          ? CalendarView(
+              key: ValueKey('cal-${books.selectedId}'),
+              ledgerId: books.selectedId,
+              version: ledger.version,
+            )
+          : Column(
+              children: [
+                // 概览卡与账单流都随 version/账本变化整体重建，保证增删改后即时刷新。
+                _TodayOverview(
+                  key: ValueKey('overview-${ledger.version}-${books.selectedId}'),
+                ),
+                Expanded(
+                  child: _DayFeed(
+                    key: ValueKey('feed-${ledger.version}-${books.selectedId}'),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+/// 头部账本选择 chip：显示当前账本（或「全部账本」），点击弹出选择层。
+class _BookChip extends StatelessWidget {
+  const _BookChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final books = context.watch<BookController>();
+    final cs = Theme.of(context).colorScheme;
+    final label = books.selected?.name ?? '全部账本';
+    return InkWell(
+      onTap: () => showBookPicker(context),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: cs.primary.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.menu_book_outlined, size: 13, color: cs.primary),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: cs.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            Icon(Icons.expand_more, size: 14, color: cs.primary),
+          ],
+        ),
       ),
     );
   }
@@ -115,9 +194,10 @@ class _TodayOverview extends StatelessWidget {
     String month,
   ) async {
     final repo = context.read<TransactionRepository>();
+    final ledgerId = context.read<BookController>().filterLedgerId;
     final results = await Future.wait([
-      repo.daySummary(today),
-      repo.monthSummary(month),
+      repo.daySummary(today, ledgerId: ledgerId),
+      repo.monthSummary(month, ledgerId: ledgerId),
     ]);
     return results;
   }
@@ -325,6 +405,7 @@ class _DayFeedState extends State<_DayFeed> {
       final page = await context.read<TransactionRepository>().listDaysPaged(
         limit: _pageSize,
         offset: _offset,
+        ledgerId: context.read<BookController>().filterLedgerId,
       );
       if (!mounted) return;
       setState(() {
@@ -447,7 +528,7 @@ class _DayCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF2A2C30)
+            ? AppColors.darkCard
             : Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -462,12 +543,12 @@ class _DayCard extends StatelessWidget {
                 const Spacer(),
                 Text(
                   '支 ${Money.format(group.expenseCents)}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF8A8D91)),
+                  style: const TextStyle(fontSize: 12, color: AppColors.inkGray),
                 ),
                 const SizedBox(width: 10),
                 Text(
                   '收 ${Money.format(group.incomeCents)}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF8A8D91)),
+                  style: const TextStyle(fontSize: 12, color: AppColors.inkGray),
                 ),
               ],
             ),
@@ -497,7 +578,7 @@ class _TxTile extends StatelessWidget {
     final isTransfer = tx.type == TxType.transfer;
     final title = isTransfer
         ? '转账'
-        : categories[tx.categoryId]?.name ?? S.unknownCategory;
+        : categories[tx.categoryId]?.displayName ?? S.unknownCategory;
     final account = accounts[tx.accountId];
     final target = tx.targetAccountId == null
         ? null
@@ -530,14 +611,7 @@ class _TxTile extends StatelessWidget {
       // 单击进入独立详情页；转账记录同样可进入（只读）。
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => TxDetailPage(
-            tx: tx,
-            categoryName: title,
-            categoryIcon: isTransfer
-                ? Icons.swap_horiz
-                : categories[tx.categoryId]?.icon ?? Icons.more_horiz,
-            accountName: accountText,
-          ),
+          builder: (_) => TxDetailPage(tx: tx),
         ),
       ),
       onLongPress: () => _delete(context),

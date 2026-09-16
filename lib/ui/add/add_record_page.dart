@@ -14,6 +14,7 @@ import '../../data/default_data.dart';
 import '../../data/image_store.dart';
 import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
+import '../../state/book_controller.dart';
 import '../../state/ledger_controller.dart';
 import '../mine/picker_dialogs.dart';
 import '../widgets/common.dart';
@@ -49,7 +50,8 @@ class AddRecordSheet extends StatefulWidget {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      enableDrag: false,
+      // 允许下拉关闭（移动端惯例）；内容区滚动/键盘输入不受影响。
+      enableDrag: true,
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: AddRecordSheet._(
@@ -80,7 +82,11 @@ class _AddRecordSheetState extends State<AddRecordSheet> {
   /// 编辑 = 原账单时间戳的当日时刻。
   late int _secondsOfDay;
 
-  late final TextEditingController _noteCtrl;
+late final TextEditingController _noteCtrl;
+
+  /// 本笔账单归属账本：编辑态取原账单；新建态 = 当前选中账本，
+  /// 未选具体账本时为默认账本。
+  late int _bookId;
 
   /// 当前已选/已保存的图片路径（绝对路径）。新建态为空列表，
   /// 编辑态从原账单的 [LedgerTransaction.imagePaths] 加载。
@@ -112,6 +118,7 @@ class _AddRecordSheetState extends State<AddRecordSheet> {
     }
     _noteCtrl = TextEditingController(text: e?.note ?? '');
     _imagePaths = List<String>.from(e?.imagePaths ?? const <String>[]);
+    _bookId = e?.ledgerId ?? context.read<BookController>().writeTargetId;
   }
 
   @override
@@ -159,6 +166,18 @@ class _AddRecordSheetState extends State<AddRecordSheet> {
       height: MediaQuery.sizeOf(context).height * 0.80,
       child: Column(
         children: [
+          // ── 拖拽把手：提示可下拉关闭 ──
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 6, bottom: 2),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
           // ── 顶排：支出/收入（左） + 日期/时刻（右） ──
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -226,11 +245,23 @@ class _AddRecordSheetState extends State<AddRecordSheet> {
               onAdd: _addCategory,
             ),
           ),
-          // ── 交易方式 + 备注 ──
+          // ── 账本 + 交易方式 + 备注 ──
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
             child: Row(
               children: [
+                _chip(
+                  onTap: _pickBook,
+                  icon: Icons.menu_book_outlined,
+                  label: context
+                      .watch<BookController>()
+                      .books
+                      .where((b) => b.id == _bookId)
+                      .map((b) => b.name)
+                      .firstOrNull ??
+                      '默认账本',
+                ),
+                const SizedBox(width: 8),
                 _chip(
                   onTap: _pickAccount,
                   icon: Icons.account_balance_wallet_outlined,
@@ -334,6 +365,65 @@ class _AddRecordSheetState extends State<AddRecordSheet> {
         ),
       ),
     );
+  }
+
+  /// 选择本笔账单的归属账本（只影响本笔，不改全局视图筛选）。
+  Future<void> _pickBook() async {
+    final controller = context.read<BookController>();
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                '选择账本',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: controller.books.length,
+                itemBuilder: (ctx, i) {
+                  final b = controller.books[i];
+                  final selected = b.id == _bookId;
+                  return ListTile(
+                    leading: Icon(b.icon, color: b.color),
+                    title: Text(b.name),
+                    trailing: selected ? const Icon(Icons.check) : null,
+                    onTap: () => Navigator.pop(ctx, b.id),
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.add_circle_outline),
+              title: const Text('新建账本'),
+              onTap: () async {
+                final res = await showBookEditDialog(ctx);
+                if (res == null || !ctx.mounted) return;
+                try {
+                  final id = await ctx.read<LedgerBookRepository>().create(
+                    name: res.name,
+                    iconCode: res.iconCode,
+                    colorValue: DefaultData.colorChoices.first.toARGB32(),
+                  );
+                  await controller.reload();
+                  if (ctx.mounted && id > 0) Navigator.pop(ctx, id);
+                } on AppException catch (e) {
+                  if (ctx.mounted) showToast(ctx, e.message);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked != null) setState(() => _bookId = picked);
   }
 
   Future<void> _pickAccount() async {
@@ -483,6 +573,7 @@ class _AddRecordSheetState extends State<AddRecordSheet> {
       dateKey: DateKeys.dateKey(_date),
       timestamp: timestamp,
       note: note.isEmpty ? null : note,
+      ledgerId: _bookId,
       imagePaths: List<String>.from(_imagePaths),
       deleted: false,
       createdAt: e?.createdAt ?? timestamp,

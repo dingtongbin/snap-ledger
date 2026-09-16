@@ -29,13 +29,21 @@ dependencies:
   file_selector: ^1.0.3
   # 备份 zip 打包（纯 Dart 实现，含图片附件归档）
   archive: ^3.6.1
+  # 备份加密：AES-256-GCM + PBKDF2（纯 Dart）
+  cryptography: ^2.7.0
+  # 帮助文档 Markdown 渲染（内容存于 assets/help/*.md）
+  flutter_markdown: ^0.7.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # 测试中伪造文档目录（备份/图片端到端测试用）
+  path_provider_platform_interface: ^2.1.0
 
 flutter:
   uses-material-design: true
   assets:
     - LICENSE
+    - assets/help/
+    - assets/logo/

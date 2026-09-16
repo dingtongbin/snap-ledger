@@ -1,6 +1,22 @@
 import 'package:flutter/material.dart';
 
-/// 全局主题。明亮的蓝色主视觉，清爽低饱和。
+/// 语义化颜色 token：全 app 引用此处，页面内不写裸色值。
+class AppColors {
+  AppColors._();
+
+  /// 支出 / 危险（红）。
+  static const Color danger = Color(0xFFEF5350);
+
+  /// 次要文字灰（对白底对比度 ≥ 4.5:1，WCAG AA）。
+  static const Color inkGray = Color(0xFF6F7276);
+
+  /// 深色模式卡片底。
+  static const Color darkCard = Color(0xFF2A2C30);
+
+  /// 主文字色（浅底黑 / 全局基准）。
+  static const Color ink = Color(0xFF1F2024);
+}
+
 class AppTheme {
   AppTheme._();
 
@@ -45,7 +61,7 @@ class AppTheme {
         secondary: seed,
         onSecondary: Colors.white,
         surface: Colors.white,
-        onSurface: const Color(0xFF1F2024),
+        onSurface: AppColors.ink,
         error: const Color(0xFFE25C5C),
         onError: Colors.white,
       );
@@ -53,10 +69,10 @@ class AppTheme {
     return ColorScheme(
       brightness: Brightness.dark,
       primary: seed,
-      onPrimary: const Color(0xFF1F2024),
+      onPrimary: AppColors.ink,
       secondary: seed,
-      onSecondary: const Color(0xFF1F2024),
-      surface: const Color(0xFF1F2024),
+      onSecondary: AppColors.ink,
+      surface: AppColors.ink,
       onSurface: Colors.white,
       error: const Color(0xFFE25C5C),
       onError: Colors.white,
@@ -91,7 +107,7 @@ class AppTheme {
         contentPadding: const EdgeInsets.symmetric(horizontal: 10),
         minLeadingWidth: 24,
         horizontalTitleGap: 8,
-        iconColor: dark ? Colors.white : const Color(0xFF1F2024),
+        iconColor: dark ? Colors.white : AppColors.ink,
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: dark ? null : cs.surface,

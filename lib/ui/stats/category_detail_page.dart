@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/date_utils.dart';
@@ -45,7 +46,7 @@ class CategoryDetailPage extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF2A2C30)
+                  ? AppColors.darkCard
                   : Colors.white,
               borderRadius: BorderRadius.circular(12),
             ),

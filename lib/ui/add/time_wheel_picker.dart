@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme.dart';
 
 /// 两列上下滑轮时间选择器（时、分，秒固定为 0）。
 ///
@@ -86,7 +87,7 @@ class _TimeWheelSheetState extends State<_TimeWheelSheet> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF2A2C30)
+              ? AppColors.darkCard
               : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         ),
