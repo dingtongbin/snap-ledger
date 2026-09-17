@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.normpath(os.path.join(ROOT, '软著材料'))
 IMG_DIR = os.path.normpath(os.path.join(OUT, 'img'))
-APP = '随手记账V0.1.0'
+APP = '随手记账V1.0.0'
 IMG_CACHE = 'C:/Users/30978/.zcode/cli/image-cache/sess_cf0646cb-d47a-4aa7-a6fc-4e097d886bcb'
 
 # ── 字体 ──
@@ -84,11 +84,11 @@ Dart（Flutter 框架）
 保存并以时间戳命名；备份采用 PBKDF2 派生密钥与 AES-256-GCM 加密。
 
 【程序鉴别材料】
-见「随手记账V0.1.0-源程序.pdf」：前30页+后30页共60页，每页50行，
+见「随手记账V1.0.0-源程序.pdf」：前30页+后30页共60页，每页50行，
 页眉含软件名称、版本号与页码。
 
 【文档鉴别材料】
-见「随手记账V0.1.0-用户手册.pdf」（不足60页，全部提交）。
+见「随手记账V1.0.0-用户手册.pdf」（不足60页，全部提交）。
 
 【其他相关证明文件】
 个人申请一般无需上传；如走单位申请需营业执照副本盖章件。
@@ -248,7 +248,7 @@ def manual_pdf(path):
         y -= 20
 
     elements = [('h', '随手记账（snap-ledger）用户手册'),
-                ('p', '版本：V0.1.0    作者：dingtongbin'),
+                ('p', '版本：V1.0.0    作者：dingtongbin'),
                 ('p', '完全本地化的个人记账应用 · 数据不出设备')]
     for title, paras in SECTIONS:
         elements.append(('h', title))
@@ -287,11 +287,11 @@ def main():
         lines.append(f'// ===== {rel} =====')
         lines.extend(open(f, encoding='utf-8').read().splitlines())
         lines.append('')
-    src = os.path.join(OUT, '随手记账V0.1.0-源程序.pdf')
+    src = os.path.join(OUT, '随手记账V1.0.0-源程序.pdf')
     total = source_pdf(lines, src)
     print(f'源程序 PDF: {src}  页数={total}')
 
-    man = os.path.join(OUT, '随手记账V0.1.0-用户手册.pdf')
+    man = os.path.join(OUT, '随手记账V1.0.0-用户手册.pdf')
     pages = manual_pdf(man)
     print(f'用户手册 PDF: {man}  页数={pages}')
 

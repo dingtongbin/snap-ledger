@@ -2,8 +2,8 @@
 """生成软件著作权登记材料（输出到 软著材料/，已加入 .gitignore 不入库）。
 
 材料清单：
-1. 随手记账V0.1.0-源程序.docx   前30页+后30页，每页50行，页眉带名称/版本/页码
-2. 随手记账V0.1.0-用户手册.docx  图文操作手册（含界面截图）
+1. 随手记账V1.0.0-源程序.docx   前30页+后30页，每页50行，页眉带名称/版本/页码
+2. 随手记账V1.0.0-用户手册.docx  图文操作手册（含界面截图）
 3. 申请表填写参考.md             软件用途/技术特点/主要功能等申请表文字
 
 用法：python scripts/gen_copyright.py
@@ -18,7 +18,7 @@ from docx.oxml import OxmlElement
 from docx.shared import Cm, Pt, RGBColor
 
 APP_NAME = '随手记账'
-APP_VERSION = 'V0.1.0'
+APP_VERSION = 'V1.0.0'
 HEADER_PREFIX = f'{APP_NAME}{APP_VERSION}'
 OUT_DIR = '软著材料'
 LINES_PER_PAGE = 50
@@ -209,7 +209,7 @@ def application_notes(path):
 > 以下为申请表各栏的参考文字，登记人信息请以真实证件为准。
 
 - 软件全称：随手记账软件（简称：snap-ledger）
-- 版本号：V0.1.0
+- 版本号：V1.0.0
 - 开发完成日期：2026-09-16（以 v0.1.0 标签日期为准，可自行调整）
 - 首次发表日期：2026-09-17（GitHub Release 发布日；也可勾选"未发表"）
 - 开发方式：独立开发
