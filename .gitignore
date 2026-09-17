@@ -55,3 +55,11 @@ IDENTITY.md
 .legal-proxy-capability.json
 .tyc-proxy-capability.json
 .openclaw*
+
+# ── AI / 助手相关文件（不入库）──
+.cluster/
+SOUL.md
+TOOLS.md
+USER.md
+MEMORY.md
+EXPERTS.md
