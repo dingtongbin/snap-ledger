@@ -70,6 +70,12 @@ flutter run -d windows    # 或 flutter build apk
 需要 Flutter 3.35+。国内网络建议将 `PUB_HOSTED_URL` 与
 `FLUTTER_STORAGE_BASE_URL` 指向 flutter-io.cn 镜像。
 
+## 作者与版权
+
+- 作者：**dingtongbin**（[github.com/dingtongbin](https://github.com/dingtongbin)）
+- 软件名称：随手记账（snap-ledger），当前版本 v0.1.0
+- Copyright © 2026 dingtongbin
+
 ## 许可证
 
 [GPL-3.0](LICENSE)。自由使用、自由修改、自由分发；基于本程序的作品同样必须以 GPL-3.0 开源。

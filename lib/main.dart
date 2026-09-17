@@ -1,6 +1,7 @@
 // 随手记账 —— 一款完全本地化的个人记账应用。
 //
-// Copyright (C) 2026 随手记账 contributors
+// Copyright (C) 2026 dingtongbin
+// 联系方式：https://github.com/dingtongbin/snap-ledger
 //
 // 本程序是自由软件：你可以根据自由软件基金会发布的 GNU 通用公共许可证
 // （GPL-3.0）条款重新分发或修改它。详见项目根目录 LICENSE 文件。

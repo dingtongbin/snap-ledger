@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.snapledger" "\0"
-            VALUE "FileDescription", "snap-ledger" "\0"
+            VALUE "FileDescription", "随手记账" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "snap-ledger" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 dingtongbin. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 dingtongbin. Released under GNU GPL-3.0." "\0"
             VALUE "OriginalFilename", "snap-ledger.exe" "\0"
-            VALUE "ProductName", "snap-ledger" "\0"
+            VALUE "ProductName", "随手记账" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -118,11 +118,14 @@ class MinePage extends StatelessWidget {
               onTap: () => showLicensePage(
                 context: context,
                 applicationName: S.appName,
-                applicationVersion: S.appVersion,
+                applicationVersion: 'v${S.appVersion}',
                 applicationIcon: Image.asset(
                   'assets/logo/logo.png',
                   width: 64,
                 ),
+                applicationLegalese: 'Copyright © 2026 dingtongbin\n'
+                    '本应用基于 GNU GPL-3.0 许可证开源\n'
+                    'github.com/dingtongbin/snap-ledger',
               ),
             ),
           ]),
