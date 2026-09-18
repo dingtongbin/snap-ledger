@@ -10,6 +10,7 @@ import '../../data/repositories/repositories.dart';
 import '../../state/ledger_controller.dart';
 import '../../state/settings_controller.dart';
 import '../../state/book_controller.dart';
+import '../../state/ui_prefs.dart';
 import '../calendar/calendar_view.dart';
 import '../search/search_page.dart';
 import '../stats/tx_detail_page.dart';
@@ -27,7 +28,8 @@ class DetailPage extends StatefulWidget {
 }
 
 class _DetailPageState extends State<DetailPage> {
-  var _calendarMode = false;
+  late var _calendarMode =
+      UiPrefs.getBool('detail.calendarMode', false);
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +53,10 @@ class _DetailPageState extends State<DetailPage> {
                   : Icons.calendar_month_outlined,
             ),
             tooltip: _calendarMode ? '列表视图' : '日历视图',
-            onPressed: () => setState(() => _calendarMode = !_calendarMode),
+            onPressed: () {
+              setState(() => _calendarMode = !_calendarMode);
+              UiPrefs.setBool('detail.calendarMode', _calendarMode);
+            },
           ),
           IconButton(
             icon: const Icon(Icons.search_outlined),

@@ -25,6 +25,7 @@ import 'data/repositories/repositories.dart';
 import 'state/book_controller.dart';
 import 'state/ledger_controller.dart';
 import 'state/settings_controller.dart';
+import 'state/ui_prefs.dart';
 import 'ui/root_shell.dart';
 
 Future<void> main() async {
@@ -49,6 +50,9 @@ Future<void> main() async {
       'https://www.gnu.org/licenses/gpl-3.0.html',
     );
   });
+
+  // UI 选择状态持久化（交易方式/视图切换等，见 UiPrefs）。
+  await UiPrefs.init(prefs);
 
   runApp(BookkeepingApp(db: db, prefs: prefs));
 }

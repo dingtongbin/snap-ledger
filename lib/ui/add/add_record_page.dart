@@ -16,6 +16,7 @@ import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
 import '../../state/book_controller.dart';
 import '../../state/ledger_controller.dart';
+import '../../state/ui_prefs.dart';
 import '../mine/picker_dialogs.dart';
 import '../widgets/common.dart';
 import 'amount_keypad.dart';
@@ -98,7 +99,11 @@ late final TextEditingController _noteCtrl;
     final e = widget.existing;
     _accounts = widget.accounts;
     _categories = widget.categories;
-    _type = e?.type ?? TxType.expense;
+    // 新建态恢复上次选择（交易类型/交易方式），编辑态以原账单为准。
+    _type = e?.type ??
+        (UiPrefs.getInt('add.type', TxType.expense.code) == TxType.income.code
+            ? TxType.income
+            : TxType.expense);
     _date = e == null ? DateTime.now() : DateKeys.parseDateKey(e.dateKey);
     final openedAt = e == null
         ? DateTime.now()
@@ -108,13 +113,25 @@ late final TextEditingController _noteCtrl;
     if (e != null && e.amountCents > 0) {
       _amount.reset(AmountInput.fromCents(e.amountCents));
     }
-    _accountId = e?.accountId ?? 0;
+    _accountId = e?.accountId ??
+        UiPrefs.getInt(
+            'add.accountId',
+            _accounts.isEmpty
+                ? 0
+                : _accounts.firstWhere((a) => a.builtin,
+                        orElse: () => _accounts.first)
+                    .id!);
     // 编辑态账户可能已被删除：回退到第一个可用账户。
     if (!_accounts.any((a) => a.id == _accountId)) {
       _accountId = _accounts.isEmpty ? 0 : _accounts.first.id!;
     }
+    // 上次使用的分类（需与当前类型匹配且未被删除）。
+    final savedCatId = UiPrefs.getInt('add.categoryId', 0);
     if (e != null && e.categoryId != null) {
       _category = _categories.where((c) => c.id == e.categoryId).firstOrNull;
+    } else if (savedCatId > 0) {
+      _category = _categories.where((c) =>
+          c.id == savedCatId && c.kind == _type).firstOrNull;
     }
     _noteCtrl = TextEditingController(text: e?.note ?? '');
     _imagePaths = List<String>.from(e?.imagePaths ?? const <String>[]);
@@ -241,7 +258,10 @@ late final TextEditingController _noteCtrl;
             child: _CategoryGrid(
               categories: _visibleCategories,
               selected: _category,
-              onSelect: (c) => setState(() => _category = c),
+              onSelect: (c) {
+                setState(() => _category = c);
+                UiPrefs.setInt('add.categoryId', c.id ?? 0);
+              },
               onAdd: _addCategory,
             ),
           ),
@@ -452,7 +472,10 @@ late final TextEditingController _noteCtrl;
       },
     );
     if (id != null && id != _accountId) {
-      setState(() => _accountId = id);
+      setState(() {
+        _accountId = id;
+        UiPrefs.setInt('add.accountId', id);
+      });
     }
   }
 
@@ -597,6 +620,7 @@ late final TextEditingController _noteCtrl;
     if (t == _type) return;
     setState(() {
       _type = t;
+      UiPrefs.setInt('add.type', t.code);
       if (_category != null && _category!.kind != t) {
         _category = null;
       }

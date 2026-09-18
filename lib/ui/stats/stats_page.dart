@@ -10,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/models/models.dart';
 import '../../data/repositories/repositories.dart';
 import '../../state/book_controller.dart';
+import '../../state/ui_prefs.dart';
 import '../../state/ledger_controller.dart';
 import '../widgets/book_picker.dart';
 import '../widgets/common.dart';
@@ -74,8 +75,10 @@ enum _Period { week, month, year }
 // ── 状态 ────────────────────────────────────────────────────────────────────
 
 class _StatsPageState extends State<StatsPage> {
-  _Period _period = _Period.month;
-  TxType _kind = TxType.expense;
+  _Period _period =
+      _Period.values[UiPrefs.getInt('stats.period', _Period.month.index)];
+  TxType _kind = TxType
+      .values[UiPrefs.getInt('stats.kind', TxType.expense.code)];
   late DateTime _cursor; // 锚定日期：月报=该月1日，周报=该周一，年报=该年1月1日
 
   @override
@@ -189,6 +192,7 @@ class _StatsPageState extends State<StatsPage> {
               selectedIndex: _period.index,
               onChanged: (i) {
                 _period = _Period.values[i];
+                UiPrefs.setInt('stats.period', i);
                 _resetCursor();
               },
             ),
@@ -220,9 +224,10 @@ class _StatsPageState extends State<StatsPage> {
                 // 收支切换（紧凑版）
                 ToggleButtons(
                   isSelected: [_kind == TxType.expense, _kind == TxType.income],
-                  onPressed: (i) => setState(
-                    () => _kind = i == 0 ? TxType.expense : TxType.income,
-                  ),
+                  onPressed: (i) => setState(() {
+                    _kind = i == 0 ? TxType.expense : TxType.income;
+                    UiPrefs.setInt('stats.kind', _kind.code);
+                  }),
                   borderRadius: BorderRadius.circular(8),
                   constraints: const BoxConstraints(
                     minHeight: 32,
